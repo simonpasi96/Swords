@@ -1,3 +1,3 @@
-Generating swords from blade+guard+grip+pommel templates.
+Generating swords from templates for blade, guard, grip and pommel.
 
 ![Snapshot](README/snapshot.jpg)
