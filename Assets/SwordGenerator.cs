@@ -3,80 +3,11 @@ using UnityEngine;
 
 public class SwordGenerator : MonoBehaviour
 {
-    public Transform[] bladeTemplates;
-    public Transform[] guardTemplates;
-    public Transform[] gripTemplates;
-    public Transform[] pommelTemplates;
-    const string TemplateStartName = "Start";
-    const string TemplateEndName = "End";
+    public List<Transform> bladeTemplates = new List<Transform>();
+    public List<Transform> guardTemplates = new List<Transform>();
+    public List<Transform> gripTemplates = new List<Transform>();
+    public List<Transform> pommelTemplates = new List<Transform>();
     public Transform sword;
-
-    public class SwordComponent
-    {
-        public Transform transform;
-        public Transform start, end;
-
-        public SwordComponent(Transform transform)
-        {
-            this.transform = transform;
-            start = transform.Find(TemplateStartName);
-            end = transform.Find(TemplateEndName);
-        }
-    }
-    public class SwordConfiguration
-    {
-        public SwordComponent bladeTemplate, guardTemplate, gripTemplate, pommelTemplate;
-
-        public SwordConfiguration(SwordComponent bladeTemplate, SwordComponent guardTemplate, SwordComponent gripTemplate, SwordComponent pommelTemplate)
-        {
-            this.bladeTemplate = bladeTemplate;
-            this.guardTemplate = guardTemplate;
-            this.gripTemplate = gripTemplate;
-            this.pommelTemplate = pommelTemplate;
-        }
-
-        public void BuildOnto(Transform parent)
-        {
-            // Create each component.
-            SwordComponent grip = InstantiateTemplate(gripTemplate, parent);
-            SwordComponent guard = InstantiateTemplate(guardTemplate, parent);
-            SwordComponent blade = InstantiateTemplate(bladeTemplate, parent);
-            SwordComponent pommel = InstantiateTemplate(pommelTemplate, parent);
-
-            // Snap each component.
-            SnapComponentAfter(guard, grip);
-            SnapComponentAfter(blade, guard);
-            SnapComponentBefore(pommel, grip);
-        }
-
-        static void SnapToParent(Transform transform, Transform parent)
-        {
-            transform.parent = parent;
-            transform.localPosition = Vector3.zero;
-            transform.localRotation = Quaternion.identity;
-            transform.localScale = Vector3.one;
-        }
-
-        #region Snap components together.
-        static void SnapComponentBefore(SwordComponent source, SwordComponent target)
-        {
-            source.transform.position = target.start.position + target.transform.forward * -source.end.localPosition.z;
-            source.transform.forward = target.transform.forward;
-        }
-        static void SnapComponentAfter(SwordComponent source, SwordComponent target)
-        {
-            source.transform.position = target.end.position + target.transform.forward * -source.start.localPosition.z;
-            source.transform.forward = target.transform.forward;
-        }
-        #endregion
-
-        static SwordComponent InstantiateTemplate(SwordComponent template, Transform parent)
-        {
-            SwordComponent component = new SwordComponent(Instantiate(template.transform));
-            SnapToParent(component.transform, parent);
-            return component;
-        }
-    }
 
     [ContextMenu("Randomize")]
     public void Randomize()
@@ -106,9 +37,18 @@ public class SwordGenerator : MonoBehaviour
             DestroyImmediate(sword.gameObject);
     }
 
+    public void ImportSwordTemplate(Transform parent)
+    {
+        SwordConfiguration importedConfig = new SwordConfiguration(parent);
+        AddComponentToTemplates(importedConfig.bladeTemplate, bladeTemplates);
+        AddComponentToTemplates(importedConfig.guardTemplate, guardTemplates);
+        AddComponentToTemplates(importedConfig.gripTemplate, gripTemplates);
+        AddComponentToTemplates(importedConfig.pommelTemplate, pommelTemplates);
+    }
+
     static T GetRandomItem<T>(T[] array) => array.Length == 0 ? default : array[Random.Range(0, array.Length)];
 
-    static SwordComponent[] GetSwordComponents(Transform[] transforms)
+    static SwordComponent[] GetSwordComponents(IEnumerable<Transform> transforms)
     {
         List<SwordComponent> components = new List<SwordComponent>();
         foreach (var transform in transforms)
@@ -130,14 +70,24 @@ public class SwordGenerator : MonoBehaviour
         bool hasEnd = false;
         foreach (Transform child in template)
         {
-            if (child.name == TemplateStartName)
+            if (child.name == SwordComponent.PartStartName)
                 hasStart = true;
-            if (child.name == TemplateEndName)
+            if (child.name == SwordComponent.PartEndName)
                 hasEnd = true;
             if (hasStart && hasEnd)
                 return true;
         }
         return false;
+    }
+
+    static bool AddComponentToTemplates(SwordComponent component, List<Transform> templates)
+    {
+        if (!component.IsValid)
+            return false;
+        if (templates.Contains(component.transform))
+            return false;
+        templates.Add(component.transform);
+        return true;
     }
 }
 
@@ -152,6 +102,12 @@ class SwordGenaratorEditor : UnityEditor.Editor
         GUILayout.Space(5);
 
         SwordGenerator script = (SwordGenerator)target;
+
+        DrawDropArea<GameObject>("Drop sword template here", (go) =>
+        {
+            script.ImportSwordTemplate(go.transform);
+            MarkSceneDirty(script);
+        });
 
         if (GUILayout.Button("Randomize"))
         {
@@ -173,6 +129,38 @@ class SwordGenaratorEditor : UnityEditor.Editor
             UnityEditor.SceneManagement.EditorSceneManager.MarkSceneDirty(UnityEngine.SceneManagement.SceneManager.GetActiveScene());
             UnityEditor.EditorUtility.SetDirty(script);
         }
+    }
+
+    Rect DrawDropArea<T>(string boxText, System.Action<T> ObjectAction)
+    {
+        Event evt = Event.current;
+        Rect boxRect = GUILayoutUtility.GetRect(50, 30, GUILayout.ExpandWidth(true));
+        GUIStyle boxStyle = new GUIStyle(GUI.skin.box);
+        boxStyle.alignment = TextAnchor.MiddleCenter;
+        if (UnityEditor.EditorGUIUtility.isProSkin)
+            boxStyle.normal.textColor = Color.white;
+        GUI.Box(boxRect, boxText, boxStyle);
+
+        switch (evt.type)
+        {
+            case EventType.DragUpdated:
+            case EventType.DragPerform:
+                if (!boxRect.Contains(evt.mousePosition))
+                    break;
+
+                UnityEditor.DragAndDrop.visualMode = UnityEditor.DragAndDropVisualMode.Copy;
+                if (evt.type == EventType.DragPerform)
+                {
+                    UnityEditor.DragAndDrop.AcceptDrag();
+
+                    foreach (Object droppedObject in UnityEditor.DragAndDrop.objectReferences)
+                        if (droppedObject is T target)
+                            ObjectAction(target);
+                }
+                break;
+        }
+
+        return boxRect;
     }
 }
 #endif
